@@ -1,0 +1,719 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum TenantType {
+  MSP
+  CLIENT
+}
+
+enum UserRole {
+  MSP_ADMIN
+  MSP_USER
+  TENANT_ADMIN
+  TENANT_USER
+  VENDOR_USER
+}
+
+enum VendorStage {
+  EVALUATING
+  SCREENING
+  ONBOARDED
+  OFFBOARDING
+  OFFBOARDED
+}
+
+enum VendorCriticality {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum BusinessCaseEnum {
+  AI_SYSTEMS
+  NETWORK_INTEGRATION
+  ONSITE_PHYSICAL_ACCESS
+  PERSONAL_DATA_PRIVACY
+  TECHNOLOGY_PROVIDER
+  THIRD_PARTY_DATA_HOSTING
+  VENDOR_DATA_PROCESSING
+  VENDOR_LOGICAL_ACCESS
+}
+
+enum DataCategory {
+  COMPANY
+  CUSTOMER
+}
+
+enum SensitivityLevel {
+  EXTREME
+  MEDIUM
+  LOW
+}
+
+enum ArtifactType {
+  SOC2_TYPE1
+  SOC2_TYPE2
+  ISO_27001
+  ISO_27701
+  PENTEST_REPORT
+  VULNERABILITY_SCAN
+  INSURANCE_CERTIFICATE
+  PRIVACY_POLICY
+  DATA_PROCESSING_AGREEMENT
+  BUSINESS_CONTINUITY_PLAN
+  INCIDENT_RESPONSE_PLAN
+  SECURITY_POLICY
+  VENDOR_QUESTIONNAIRE
+  CAIQ
+  SIG
+  HECVAT
+  CUSTOM
+  OTHER
+}
+
+enum AiAnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ArtifactSource {
+  MANUAL_UPLOAD
+  VENDOR_PORTAL_UPLOAD
+  TRUST_CENTER
+  AI_DISCOVERED
+}
+
+enum CoverageLevel {
+  NONE
+  PARTIAL
+  FULL
+}
+
+enum MaturityLevel {
+  NOT_ASSESSED
+  INITIAL
+  DEVELOPING
+  DEFINED
+  MANAGED
+  OPTIMIZING
+}
+
+enum RiskLevel {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  MINIMAL
+}
+
+enum ComplianceStatus {
+  UNKNOWN
+  COMPLIANT
+  PARTIALLY_COMPLIANT
+  NON_COMPLIANT
+  IN_PROGRESS
+  EXPIRED
+}
+
+enum RemediationPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum RemediationStatus {
+  OPEN
+  IN_PROGRESS
+  AWAITING_VENDOR
+  VENDOR_RESPONDED
+  UNDER_REVIEW
+  ACCEPTED
+  CLOSED
+  OVERDUE
+}
+
+enum CommentAuthorType {
+  INTERNAL_USER
+  VENDOR_USER
+}
+
+enum ReviewCycleStatus {
+  SCHEDULED
+  IN_PROGRESS
+  EVIDENCE_COLLECTION
+  UNDER_REVIEW
+  COMPLETED
+  OVERDUE
+}
+
+enum AlertType {
+  DATA_BREACH
+  SECURITY_INCIDENT
+  COMPLIANCE_CHANGE
+  LEADERSHIP_CHANGE
+  FINANCIAL_RISK
+  NEGATIVE_NEWS
+  CERTIFICATE_EXPIRY
+  DOMAIN_SECURITY
+  TECHNOLOGY_CHANGE
+}
+
+enum AlertSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFORMATIONAL
+}
+
+// ============================================================================
+// TENANT & USER MANAGEMENT
+// ============================================================================
+
+model Tenant {
+  id             String     @id @default(uuid()) @db.Uuid
+  name           String
+  slug           String     @unique
+  type           TenantType @default(CLIENT)
+  parentTenantId String?    @db.Uuid
+  parentTenant   Tenant?    @relation("TenantHierarchy", fields: [parentTenantId], references: [id])
+  childTenants   Tenant[]   @relation("TenantHierarchy")
+  isActive       Boolean    @default(true)
+  settings       Json?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  users           User[]
+  vendors         Vendor[]
+  scoringMatrices ScoringMatrix[]
+  auditLogs       AuditLog[]
+
+  @@index([parentTenantId])
+  @@index([slug])
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @db.Uuid
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  entraObjectId String    @unique
+  email         String
+  displayName   String
+  role          UserRole
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  vendorOwnerships    VendorOwner[]
+  remediationsCreated Remediation[] @relation("RemediationCreator")
+  auditLogs           AuditLog[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([entraObjectId])
+}
+
+// ============================================================================
+// VENDOR CORE
+// ============================================================================
+
+model Vendor {
+  id                  String            @id @default(uuid()) @db.Uuid
+  tenantId            String            @db.Uuid
+  tenant              Tenant            @relation(fields: [tenantId], references: [id])
+  name                String
+  website             String?
+  description         String?
+  industry            String?
+  headquartersCountry String?
+  employeeCount       String?
+  yearFounded         Int?
+  logoUrl             String?
+  stage               VendorStage       @default(EVALUATING)
+  criticality         VendorCriticality @default(MEDIUM)
+  aiEnrichmentData    Json?
+  aiEnrichedAt        DateTime?
+  catalogVendorId     String?           @db.Uuid
+  catalogVendor       CatalogVendor?    @relation(fields: [catalogVendorId], references: [id])
+  nextReviewDate      DateTime?
+  lastReviewDate      DateTime?
+  reviewFrequencyMonths Int             @default(12)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  owners              VendorOwner[]
+  businessCases       VendorBusinessCase[]
+  dataClassifications VendorDataClassification[]
+  artifacts           SecurityArtifact[]
+  riskScores          RiskScore[]
+  domainAssessments   DomainAssessment[]
+  complianceRecords   VendorCompliance[]
+  remediations        Remediation[]
+  subprocessorLinks   VendorSubprocessor[]
+  reviewCycles        ReviewCycle[]
+  monitoringAlerts    MonitoringAlert[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([tenantId, stage])
+  @@index([catalogVendorId])
+}
+
+// ============================================================================
+// CATALOG (SHARED / GLOBAL VENDOR DATA)
+// ============================================================================
+
+model CatalogVendor {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String   @unique
+  website          String?
+  description      String?
+  industry         String?
+  logoUrl          String?
+  globalEnrichment Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenantVendors    Vendor[]
+  catalogArtifacts CatalogArtifact[]
+}
+
+model CatalogArtifact {
+  id              String       @id @default(uuid()) @db.Uuid
+  catalogVendorId String       @db.Uuid
+  catalogVendor   CatalogVendor @relation(fields: [catalogVendorId], references: [id])
+  name            String
+  type            ArtifactType
+  objectKey       String
+  bucketName      String
+  aiAnalysis      Json?
+  validFrom       DateTime?
+  validUntil      DateTime?
+  createdAt       DateTime     @default(now())
+
+  @@index([catalogVendorId])
+}
+
+// ============================================================================
+// VENDOR OWNERSHIP
+// ============================================================================
+
+model VendorOwner {
+  id         String   @id @default(uuid()) @db.Uuid
+  vendorId   String   @db.Uuid
+  vendor     Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id])
+  isPrimary  Boolean  @default(false)
+  assignedAt DateTime @default(now())
+
+  @@unique([vendorId, userId])
+  @@index([vendorId])
+  @@index([userId])
+}
+
+// ============================================================================
+// VENDOR BUSINESS CASES
+// ============================================================================
+
+model VendorBusinessCase {
+  id           String           @id @default(uuid()) @db.Uuid
+  vendorId     String           @db.Uuid
+  vendor       Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  businessCase BusinessCaseEnum
+  createdAt    DateTime         @default(now())
+
+  @@unique([vendorId, businessCase])
+  @@index([vendorId])
+}
+
+// ============================================================================
+// DATA CLASSIFICATION
+// ============================================================================
+
+model VendorDataClassification {
+  id         String   @id @default(uuid()) @db.Uuid
+  vendorId   String   @db.Uuid
+  vendor     Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  dataTypeId String   @db.Uuid
+  dataType   DataType @relation(fields: [dataTypeId], references: [id])
+  isSelected Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@unique([vendorId, dataTypeId])
+  @@index([vendorId])
+}
+
+model DataType {
+  id               String           @id @default(uuid()) @db.Uuid
+  category         DataCategory
+  name             String
+  sensitivityLevel SensitivityLevel
+  weightPercentage Float
+  sortOrder        Int
+  createdAt        DateTime         @default(now())
+
+  vendorClassifications VendorDataClassification[]
+
+  @@unique([category, name])
+}
+
+// ============================================================================
+// SECURITY ARTIFACTS
+// ============================================================================
+
+model SecurityArtifact {
+  id               String           @id @default(uuid()) @db.Uuid
+  tenantId         String           @db.Uuid
+  vendorId         String           @db.Uuid
+  vendor           Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  name             String
+  type             ArtifactType
+  fileName         String
+  fileSize         Int
+  mimeType         String
+  objectKey        String
+  bucketName       String
+  validFrom        DateTime?
+  validUntil       DateTime?
+  isExpired        Boolean          @default(false)
+  aiAnalysisStatus AiAnalysisStatus @default(PENDING)
+  aiAnalysis       Json?
+  aiAnalyzedAt     DateTime?
+  source           ArtifactSource   @default(MANUAL_UPLOAD)
+  sourceUrl        String?
+  uploadedById     String?          @db.Uuid
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  domainCoverage ArtifactDomainCoverage[]
+
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([vendorId, type])
+}
+
+model ArtifactDomainCoverage {
+  id            String        @id @default(uuid()) @db.Uuid
+  artifactId    String        @db.Uuid
+  artifact      SecurityArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  domainId      String        @db.Uuid
+  domain        SecurityDomain @relation(fields: [domainId], references: [id])
+  coverageLevel CoverageLevel @default(PARTIAL)
+  aiConfidence  Float?
+
+  @@unique([artifactId, domainId])
+  @@index([artifactId])
+}
+
+// ============================================================================
+// SECURITY DOMAINS & ASSESSMENTS
+// ============================================================================
+
+model SecurityDomain {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  sortOrder   Int
+  parentId    String?  @db.Uuid
+  parent      SecurityDomain?  @relation("DomainHierarchy", fields: [parentId], references: [id])
+  children    SecurityDomain[] @relation("DomainHierarchy")
+  createdAt   DateTime @default(now())
+
+  domainAssessments  DomainAssessment[]
+  artifactCoverage   ArtifactDomainCoverage[]
+  remediations       Remediation[]
+}
+
+model DomainAssessment {
+  id                   String        @id @default(uuid()) @db.Uuid
+  tenantId             String        @db.Uuid
+  vendorId             String        @db.Uuid
+  vendor               Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  domainId             String        @db.Uuid
+  domain               SecurityDomain @relation(fields: [domainId], references: [id])
+  maturityLevel        MaturityLevel @default(NOT_ASSESSED)
+  controlEffectiveness Float?
+  gapDescription       String?
+  findings             Json?
+  evidence             Json?
+  aiGenerated          Boolean       @default(false)
+  aiConfidence         Float?
+  assessedAt           DateTime?
+  assessedById         String?       @db.Uuid
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@unique([vendorId, domainId])
+  @@index([tenantId])
+  @@index([vendorId])
+}
+
+// ============================================================================
+// RISK SCORING
+// ============================================================================
+
+model RiskScore {
+  id                  String     @id @default(uuid()) @db.Uuid
+  tenantId            String     @db.Uuid
+  vendorId            String     @db.Uuid
+  vendor              Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  inherentRiskScore   Float
+  inherentRiskLevel   RiskLevel
+  inherentBreakdown   Json
+  residualRiskScore   Float?
+  residualRiskLevel   RiskLevel?
+  residualBreakdown   Json?
+  impactScore         Float
+  likelihoodScore     Float?
+  isLatest            Boolean    @default(true)
+  calculatedAt        DateTime   @default(now())
+  calculatedById      String?    @db.Uuid
+  createdAt           DateTime   @default(now())
+
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([vendorId, isLatest])
+}
+
+model ScoringMatrix {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @db.Uuid
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String   @default("Default")
+  isActive  Boolean  @default(true)
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+// ============================================================================
+// COMPLIANCE
+// ============================================================================
+
+model ComplianceFramework {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  version     String?
+  category    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  vendorCompliance VendorCompliance[]
+}
+
+model VendorCompliance {
+  id                  String           @id @default(uuid()) @db.Uuid
+  tenantId            String           @db.Uuid
+  vendorId            String           @db.Uuid
+  vendor              Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  frameworkId         String           @db.Uuid
+  framework           ComplianceFramework @relation(fields: [frameworkId], references: [id])
+  status              ComplianceStatus @default(UNKNOWN)
+  certificationDate   DateTime?
+  expirationDate      DateTime?
+  evidenceArtifactId  String?          @db.Uuid
+  notes               String?
+  aiDiscovered        Boolean          @default(false)
+  aiConfidence        Float?
+  sourceUrl           String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  @@unique([vendorId, frameworkId])
+  @@index([tenantId])
+  @@index([vendorId])
+}
+
+// ============================================================================
+// REMEDIATION
+// ============================================================================
+
+model Remediation {
+  id                  String              @id @default(uuid()) @db.Uuid
+  tenantId            String              @db.Uuid
+  vendorId            String              @db.Uuid
+  vendor              Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  title               String
+  description         String
+  domainId            String?             @db.Uuid
+  domain              SecurityDomain?     @relation(fields: [domainId], references: [id])
+  priority            RemediationPriority @default(MEDIUM)
+  status              RemediationStatus   @default(OPEN)
+  dueDate             DateTime?
+  completedAt         DateTime?
+  vendorResponse      String?
+  responseArtifactId  String?             @db.Uuid
+  createdById         String              @db.Uuid
+  createdBy           User                @relation("RemediationCreator", fields: [createdById], references: [id])
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  comments RemediationComment[]
+
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([vendorId, status])
+}
+
+model RemediationComment {
+  id             String            @id @default(uuid()) @db.Uuid
+  remediationId  String            @db.Uuid
+  remediation    Remediation       @relation(fields: [remediationId], references: [id], onDelete: Cascade)
+  authorId       String            @db.Uuid
+  authorType     CommentAuthorType
+  content        String
+  createdAt      DateTime          @default(now())
+
+  @@index([remediationId])
+}
+
+// ============================================================================
+// SUBPROCESSORS
+// ============================================================================
+
+model Subprocessor {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique
+  website     String?
+  description String?
+  industry    String?
+  country     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  vendorLinks VendorSubprocessor[]
+}
+
+model VendorSubprocessor {
+  id              String     @id @default(uuid()) @db.Uuid
+  tenantId        String     @db.Uuid
+  vendorId        String     @db.Uuid
+  vendor          Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  subprocessorId  String     @db.Uuid
+  subprocessor    Subprocessor @relation(fields: [subprocessorId], references: [id])
+  serviceProvided String?
+  dataShared      String?
+  riskLevel       RiskLevel?
+  aiDiscovered    Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([vendorId, subprocessorId])
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([subprocessorId])
+}
+
+// ============================================================================
+// REVIEW CYCLES
+// ============================================================================
+
+model ReviewCycle {
+  id                     String            @id @default(uuid()) @db.Uuid
+  tenantId               String            @db.Uuid
+  vendorId               String            @db.Uuid
+  vendor                 Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  cycleNumber            Int
+  status                 ReviewCycleStatus @default(SCHEDULED)
+  startDate              DateTime
+  dueDate                DateTime
+  completedDate          DateTime?
+  inherentScoreSnapshot  Float?
+  residualScoreSnapshot  Float?
+  notes                  String?
+  triggeredBy            String?           @db.Uuid
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([status])
+}
+
+// ============================================================================
+// MONITORING ALERTS
+// ============================================================================
+
+model MonitoringAlert {
+  id              String        @id @default(uuid()) @db.Uuid
+  tenantId        String        @db.Uuid
+  vendorId        String        @db.Uuid
+  vendor          Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  type            AlertType
+  severity        AlertSeverity
+  title           String
+  description     String
+  sourceUrl       String?
+  sourceData      Json?
+  riskImpact      Float?
+  acknowledged    Boolean       @default(false)
+  acknowledgedAt  DateTime?
+  acknowledgedById String?      @db.Uuid
+  dismissed       Boolean       @default(false)
+  detectedAt      DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+
+  @@index([tenantId])
+  @@index([vendorId])
+  @@index([vendorId, acknowledged])
+  @@index([detectedAt])
+}
+
+// ============================================================================
+// AUDIT LOG
+// ============================================================================
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @db.Uuid
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  userId     String?  @db.Uuid
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String?  @db.Uuid
+  changes    Json?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, entityType])
+  @@index([tenantId, createdAt])
+  @@index([entityType, entityId])
+}
+
+// ============================================================================
+// NOTIFICATION PREFERENCES
+// ============================================================================
+
+model NotificationPreference {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @unique @db.Uuid
+  preferences Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

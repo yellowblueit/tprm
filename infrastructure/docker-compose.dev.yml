@@ -1,0 +1,32 @@
+# Development overrides - use with: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+services:
+  # In dev, run API and Web outside Docker for hot reload
+  # Only use infrastructure services from Docker
+  api:
+    profiles:
+      - full  # Only runs with --profile full
+  web:
+    profiles:
+      - full  # Only runs with --profile full
+  nginx:
+    profiles:
+      - full  # Only runs with --profile full
+  worker:
+    profiles:
+      - full  # Only runs with --profile full
+  minio-init:
+    profiles:
+      - ""    # Always runs
+
+  postgres:
+    ports:
+      - "5433:5432"
+
+  redis:
+    ports:
+      - "6380:6379"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
