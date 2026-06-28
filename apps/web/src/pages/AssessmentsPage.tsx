@@ -2,13 +2,14 @@ import { Link, useNavigate } from "react-router";
 import {
   Building2,
   BarChart3,
-  Layers,
-  BrainCircuit,
+  CheckCircle2,
+  Clock,
   ArrowUpRight,
   Calendar,
 } from "lucide-react";
-import { cn, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
+import { PageLoadingSkeleton } from "@/components/common/LoadingSkeleton";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import {
   Button,
@@ -23,125 +24,30 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type MaturityLevel =
-  | "Not Assessed"
-  | "Initial"
-  | "Developing"
-  | "Defined"
-  | "Managed"
-  | "Optimizing";
-
-type AIStatus = "Complete" | "In Progress" | "Not Started";
-
-interface VendorAssessment {
-  id: string;
-  name: string;
-  domainsAssessed: number;
-  totalDomains: number;
-  maturity: MaturityLevel;
-  lastAssessment: string;
-  aiStatus: AIStatus;
-}
-
-// ---------------------------------------------------------------------------
-// Mock data
-// ---------------------------------------------------------------------------
-
-const summaryMetrics = [
-  { label: "Vendors Assessed", value: "8/12", icon: Building2 },
-  { label: "Average Maturity", value: "Developing", icon: BarChart3 },
-  { label: "Domains Covered", value: "14/18", icon: Layers },
-  { label: "AI Assessments Run", value: "6", icon: BrainCircuit },
-];
-
-const vendorAssessments: VendorAssessment[] = [
-  {
-    id: "v-001",
-    name: "CloudVault Technologies",
-    domainsAssessed: 18,
-    totalDomains: 18,
-    maturity: "Managed",
-    lastAssessment: "2026-06-15",
-    aiStatus: "Complete",
-  },
-  {
-    id: "v-002",
-    name: "DataFlow Analytics",
-    domainsAssessed: 14,
-    totalDomains: 18,
-    maturity: "Developing",
-    lastAssessment: "2026-06-02",
-    aiStatus: "Complete",
-  },
-  {
-    id: "v-004",
-    name: "PayStream Inc.",
-    domainsAssessed: 16,
-    totalDomains: 18,
-    maturity: "Defined",
-    lastAssessment: "2026-05-28",
-    aiStatus: "Complete",
-  },
-  {
-    id: "v-005",
-    name: "GreenLeaf HR",
-    domainsAssessed: 10,
-    totalDomains: 18,
-    maturity: "Initial",
-    lastAssessment: "2026-05-10",
-    aiStatus: "In Progress",
-  },
-  {
-    id: "v-007",
-    name: "OfficePro Supplies",
-    domainsAssessed: 6,
-    totalDomains: 18,
-    maturity: "Not Assessed",
-    lastAssessment: "2026-04-22",
-    aiStatus: "Not Started",
-  },
-  {
-    id: "v-009",
-    name: "TransGlobal Logistics",
-    domainsAssessed: 12,
-    totalDomains: 18,
-    maturity: "Developing",
-    lastAssessment: "2026-06-18",
-    aiStatus: "Complete",
-  },
-];
+import { useAssessmentSummary } from "@/hooks/use-assessments";
+import { useVendors } from "@/hooks/use-vendors";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const maturityVariant = (level: MaturityLevel) => {
-  const map: Record<
-    MaturityLevel,
-    "default" | "critical" | "warning" | "medium" | "info" | "success"
-  > = {
-    "Not Assessed": "default",
-    Initial: "critical",
-    Developing: "warning",
-    Defined: "medium",
-    Managed: "info",
-    Optimizing: "success",
+const stageVariant = (stage: string) => {
+  const map: Record<string, "info" | "warning" | "success"> = {
+    Evaluating: "info",
+    Screening: "warning",
+    Onboarded: "success",
   };
-  return map[level];
+  return map[stage] ?? ("default" as const);
 };
 
-const aiStatusVariant = (status: AIStatus) => {
-  const map: Record<AIStatus, "success" | "warning" | "default"> = {
-    Complete: "success",
-    "In Progress": "warning",
-    "Not Started": "default",
+const criticalityVariant = (c: string) => {
+  const map: Record<string, "critical" | "high" | "medium" | "low"> = {
+    Critical: "critical",
+    High: "high",
+    Medium: "medium",
+    Low: "low",
   };
-  return map[status];
+  return map[c] ?? ("default" as const);
 };
 
 // ---------------------------------------------------------------------------
@@ -150,6 +56,39 @@ const aiStatusVariant = (status: AIStatus) => {
 
 export default function AssessmentsPage() {
   const navigate = useNavigate();
+
+  const summaryQuery = useAssessmentSummary();
+  const vendorsQuery = useVendors({ pageSize: 50 });
+
+  if (summaryQuery.isLoading || vendorsQuery.isLoading) {
+    return <PageLoadingSkeleton />;
+  }
+
+  const summary = summaryQuery.data;
+  const vendors = vendorsQuery.data?.data ?? [];
+
+  const summaryMetrics = [
+    {
+      label: "Total Assessments",
+      value: summary?.total ?? 0,
+      icon: Building2,
+    },
+    {
+      label: "Completed",
+      value: summary?.completed ?? 0,
+      icon: CheckCircle2,
+    },
+    {
+      label: "In Progress",
+      value: summary?.inProgress ?? 0,
+      icon: Clock,
+    },
+    {
+      label: "Pending",
+      value: summary?.pending ?? 0,
+      icon: BarChart3,
+    },
+  ];
 
   return (
     <div className="space-y-5">
@@ -171,7 +110,7 @@ export default function AssessmentsPage() {
         ))}
       </div>
 
-      {/* Vendor Assessments Table */}
+      {/* Vendor Table */}
       <Card>
         <CardHeader>
           <CardTitle>Vendor Assessment Progress</CardTitle>
@@ -187,74 +126,53 @@ export default function AssessmentsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Vendor Name</TableHead>
-              <TableHead>Domains Assessed</TableHead>
-              <TableHead>Overall Maturity</TableHead>
-              <TableHead>Last Assessment</TableHead>
-              <TableHead>AI Status</TableHead>
+              <TableHead>Stage</TableHead>
+              <TableHead>Criticality</TableHead>
+              <TableHead>Next Review Date</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {vendorAssessments.map((vendor) => {
-              const progress =
-                (vendor.domainsAssessed / vendor.totalDomains) * 100;
-              return (
-                <TableRow key={vendor.id}>
-                  <TableCell>
-                    <span className="font-medium text-foreground">
-                      {vendor.name}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <span className="text-foreground">
-                        {vendor.domainsAssessed}/{vendor.totalDomains}
-                      </span>
-                      <div className="h-1.5 w-20 overflow-hidden rounded-md bg-muted">
-                        <div
-                          className={cn(
-                            "h-full rounded-md",
-                            progress === 100
-                              ? "bg-green-500"
-                              : progress >= 50
-                                ? "bg-amber-500"
-                                : "bg-red-500"
-                          )}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge variant={maturityVariant(vendor.maturity)}>
-                      {vendor.maturity}
-                    </StatusBadge>
-                  </TableCell>
-                  <TableCell>
+            {vendors.map((vendor) => (
+              <TableRow key={vendor.id}>
+                <TableCell>
+                  <span className="font-medium text-foreground">
+                    {vendor.name}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <StatusBadge variant={stageVariant(vendor.stage)}>
+                    {vendor.stage}
+                  </StatusBadge>
+                </TableCell>
+                <TableCell>
+                  <StatusBadge variant={criticalityVariant(vendor.criticality)}>
+                    {vendor.criticality}
+                  </StatusBadge>
+                </TableCell>
+                <TableCell>
+                  {vendor.nextReviewDate ? (
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <Calendar className="h-3.5 w-3.5" />
                       <span className="text-foreground">
-                        {formatDate(vendor.lastAssessment)}
+                        {formatDate(vendor.nextReviewDate)}
                       </span>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge variant={aiStatusVariant(vendor.aiStatus)}>
-                      {vendor.aiStatus}
-                    </StatusBadge>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => navigate(`/vendors/${vendor.id}`)}
-                    >
-                      View
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => navigate(`/vendors/${vendor.id}`)}
+                  >
+                    View
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </Card>

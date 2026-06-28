@@ -39,7 +39,10 @@ services:
     environment:
       - DATABASE_URL=postgresql://tprm:tprm_password@postgres:5432/tprm?schema=public
       - REDIS_URL=redis://redis:6379
-      - MINIO_ENDPOINT=http://minio:9000
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_FORCE_PATH_STYLE=true
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,7 +71,10 @@ services:
     environment:
       - DATABASE_URL=postgresql://tprm:tprm_password@postgres:5432/tprm?schema=public
       - REDIS_URL=redis://redis:6379
-      - MINIO_ENDPOINT=http://minio:9000
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - S3_FORCE_PATH_STYLE=true
     depends_on:
       postgres:
         condition: service_healthy

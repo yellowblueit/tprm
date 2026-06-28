@@ -15,6 +15,19 @@ import { disconnectPrisma } from './services/prisma.service.js';
 import { tenantRoutes } from './modules/tenants/tenant.routes.js';
 import { userRoutes } from './modules/users/user.routes.js';
 import { vendorRoutes } from './modules/vendors/vendor.routes.js';
+import { analyticsRoutes } from './modules/analytics/analytics.routes.js';
+import { riskScoringRoutes } from './modules/risk-scoring/risk-scoring.routes.js';
+import { assessmentRoutes } from './modules/assessments/assessment.routes.js';
+import { artifactRoutes } from './modules/artifacts/artifact.routes.js';
+import { remediationRoutes } from './modules/remediations/remediation.routes.js';
+import { complianceRoutes } from './modules/compliance/compliance.routes.js';
+import { monitoringRoutes } from './modules/monitoring/monitoring.routes.js';
+import { reviewCycleRoutes } from './modules/review-cycles/review-cycle.routes.js';
+import { subprocessorRoutes, vendorSubprocessorRoutes } from './modules/subprocessors/subprocessor.routes.js';
+import { reportRoutes } from './modules/reports/report.routes.js';
+import { settingsRoutes } from './modules/settings/settings.routes.js';
+import { vendorCatalogRoutes } from './modules/vendor-catalog/vendor-catalog.routes.js';
+import { activityRoutes, vendorActivityRoutes } from './modules/activity/activity.routes.js';
 
 async function buildServer() {
   const env = getEnv();
@@ -70,6 +83,25 @@ async function buildServer() {
     await api.register(tenantRoutes, { prefix: '/tenants' });
     await api.register(userRoutes, { prefix: '/users' });
     await api.register(vendorRoutes, { prefix: '/vendors' });
+
+    // Routes with full paths (no prefix needed)
+    await api.register(analyticsRoutes);
+    await api.register(riskScoringRoutes);
+    await api.register(assessmentRoutes);
+    await api.register(artifactRoutes);
+    await api.register(remediationRoutes);
+    await api.register(complianceRoutes);
+    await api.register(monitoringRoutes);
+    await api.register(reviewCycleRoutes);
+
+    // Routes with relative paths (need prefix)
+    await api.register(subprocessorRoutes, { prefix: '/subprocessors' });
+    await api.register(vendorSubprocessorRoutes, { prefix: '/vendors' });
+    await api.register(reportRoutes, { prefix: '/reports' });
+    await api.register(settingsRoutes, { prefix: '/settings' });
+    await api.register(vendorCatalogRoutes, { prefix: '/admin/catalog' });
+    await api.register(activityRoutes, { prefix: '/activity' });
+    await api.register(vendorActivityRoutes, { prefix: '/vendors' });
   }, { prefix: '/api/v1' });
 
   return app;

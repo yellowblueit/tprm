@@ -13,12 +13,14 @@ const envSchema = z.object({
   // Redis
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
-  // MinIO
-  MINIO_ENDPOINT: z.string().default('http://localhost:9000'),
-  MINIO_ACCESS_KEY: z.string().default('minioadmin'),
-  MINIO_SECRET_KEY: z.string().default('minioadmin'),
-  MINIO_BUCKET_ARTIFACTS: z.string().default('tprm-artifacts'),
-  MINIO_BUCKET_REPORTS: z.string().default('tprm-reports'),
+  // S3-compatible storage (MinIO dev / Wasabi prod)
+  S3_ENDPOINT: z.string().default('http://localhost:9000'),
+  S3_ACCESS_KEY: z.string().default('minioadmin'),
+  S3_SECRET_KEY: z.string().default('minioadmin'),
+  S3_REGION: z.string().default('us-east-1'),
+  S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
+  S3_BUCKET_ARTIFACTS: z.string().default('tprm-artifacts'),
+  S3_BUCKET_REPORTS: z.string().default('tprm-reports'),
 
   // Entra ID
   ENTRA_TENANT_ID: z.string(),

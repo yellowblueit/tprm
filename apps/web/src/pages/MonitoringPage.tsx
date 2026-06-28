@@ -6,8 +6,11 @@ import {
   Clock,
   Eye,
   XCircle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
+import { PageLoadingSkeleton } from "@/components/common/LoadingSkeleton";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { cn } from "@/lib/utils";
 import {
@@ -17,120 +20,56 @@ import {
   CardContent,
   EmptyState,
 } from "@/components/ui";
+import { useAlerts, useUpdateAlert } from "@/hooks/use-monitoring";
 
 // ---------------------------------------------------------------------------
 // Filter types
 // ---------------------------------------------------------------------------
 
-type FilterChip = "all" | "critical" | "high" | "medium" | "acknowledged" | "dismissed";
+type FilterChip = "all" | "CRITICAL" | "HIGH" | "MEDIUM" | "acknowledged" | "dismissed";
 
 const FILTERS: { id: FilterChip; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "critical", label: "Critical" },
-  { id: "high", label: "High" },
-  { id: "medium", label: "Medium" },
+  { id: "CRITICAL", label: "Critical" },
+  { id: "HIGH", label: "High" },
+  { id: "MEDIUM", label: "Medium" },
   { id: "acknowledged", label: "Acknowledged" },
   { id: "dismissed", label: "Dismissed" },
 ];
 
 // ---------------------------------------------------------------------------
-// Mock data
+// Helpers
 // ---------------------------------------------------------------------------
 
-const summaryStats = [
-  { label: "Active Alerts", value: 12, icon: AlertTriangle },
-  { label: "Critical", value: 2, icon: ShieldAlert },
-  { label: "Acknowledged", value: 5, icon: CheckCircle2 },
-  { label: "Last Scan", value: "Today 06:00 UTC", icon: Clock },
-];
+const severityVariant = (severity: string) => {
+  const map: Record<string, "critical" | "high" | "medium" | "low" | "default"> = {
+    CRITICAL: "critical",
+    HIGH: "high",
+    MEDIUM: "medium",
+    LOW: "low",
+    INFORMATIONAL: "default",
+  };
+  return map[severity?.toUpperCase()] ?? ("default" as const);
+};
 
-type AlertSeverity = "critical" | "high" | "medium" | "low";
-type AlertStatus = "active" | "acknowledged" | "dismissed";
+const formatSeverity = (severity: string) => {
+  if (!severity) return severity;
+  return severity.charAt(0).toUpperCase() + severity.slice(1).toLowerCase();
+};
 
-interface MonitoringAlert {
-  id: number;
-  severity: AlertSeverity;
-  title: string;
-  vendor: string;
-  detected: string;
-  description: string;
-  status: AlertStatus;
-}
+const formatTimeAgo = (dateStr: string) => {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
 
-const alerts: MonitoringAlert[] = [
-  {
-    id: 1,
-    severity: "critical",
-    title: "Data Breach Reported",
-    vendor: "DataVault Inc.",
-    detected: "2026-06-27",
-    description: "Major data breach disclosed affecting customer PII across multiple regions.",
-    status: "active",
-  },
-  {
-    id: 2,
-    severity: "critical",
-    title: "Security Incident Disclosed",
-    vendor: "CloudSync Ltd.",
-    detected: "2026-06-26",
-    description: "Unauthorized access to production systems confirmed by vendor security team.",
-    status: "active",
-  },
-  {
-    id: 3,
-    severity: "high",
-    title: "SSL Certificate Expiring",
-    vendor: "NetOps Pro",
-    detected: "2026-06-25",
-    description: "Primary SSL certificate expires in 7 days with no renewal detected.",
-    status: "acknowledged",
-  },
-  {
-    id: 4,
-    severity: "high",
-    title: "SOC 2 Report Expired",
-    vendor: "SecureHost Co.",
-    detected: "2026-06-24",
-    description: "Annual SOC 2 Type II report has expired without a renewal submission.",
-    status: "active",
-  },
-  {
-    id: 5,
-    severity: "medium",
-    title: "Negative News Mention",
-    vendor: "PayStream Global",
-    detected: "2026-06-23",
-    description: "Vendor mentioned in regulatory enforcement action news coverage.",
-    status: "acknowledged",
-  },
-  {
-    id: 6,
-    severity: "medium",
-    title: "SLA Violation Detected",
-    vendor: "InfraScale Corp.",
-    detected: "2026-06-22",
-    description: "Uptime dropped below 99.9% SLA threshold for the third consecutive day.",
-    status: "active",
-  },
-  {
-    id: 7,
-    severity: "low",
-    title: "Subprocessor Change",
-    vendor: "AnalyticsBridge",
-    detected: "2026-06-21",
-    description: "Vendor added a new subprocessor in a jurisdiction requiring review.",
-    status: "acknowledged",
-  },
-  {
-    id: 8,
-    severity: "medium",
-    title: "Insurance Policy Lapsing",
-    vendor: "LogiVault Systems",
-    detected: "2026-06-20",
-    description: "Cyber liability insurance policy set to expire within 30 days.",
-    status: "dismissed",
-  },
-];
+  if (diffDays > 0) return `${diffDays}d ago`;
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMins > 0) return `${diffMins}m ago`;
+  return "Just now";
+};
 
 // ---------------------------------------------------------------------------
 // Main Component
@@ -138,24 +77,65 @@ const alerts: MonitoringAlert[] = [
 
 export default function MonitoringPage() {
   const [activeFilter, setActiveFilter] = useState<FilterChip>("all");
-  const [alertStates, setAlertStates] = useState<Record<number, AlertStatus>>(
-    () => Object.fromEntries(alerts.map((a) => [a.id, a.status]))
-  );
+  const [page, setPage] = useState(1);
 
-  const filteredAlerts = alerts.filter((alert) => {
-    const status = alertStates[alert.id];
-    if (activeFilter === "all") return true;
-    if (activeFilter === "acknowledged") return status === "acknowledged";
-    if (activeFilter === "dismissed") return status === "dismissed";
-    return alert.severity === activeFilter && status !== "dismissed";
-  });
+  // Build query filters based on active filter
+  const queryFilters: {
+    page: number;
+    pageSize: number;
+    severity?: string;
+    acknowledged?: boolean;
+  } = {
+    page,
+    pageSize: 20,
+  };
 
-  function handleAcknowledge(id: number) {
-    setAlertStates((prev) => ({ ...prev, [id]: "acknowledged" }));
+  if (activeFilter === "CRITICAL" || activeFilter === "HIGH" || activeFilter === "MEDIUM") {
+    queryFilters.severity = activeFilter;
+  } else if (activeFilter === "acknowledged") {
+    queryFilters.acknowledged = true;
+  }
+  // "dismissed" and "all" are handled client-side since the API may not support a dismissed filter directly
+
+  const alertsQuery = useAlerts(queryFilters);
+  const updateAlertMutation = useUpdateAlert();
+
+  const handleFilterChange = (chip: FilterChip) => {
+    setActiveFilter(chip);
+    setPage(1);
+  };
+
+  if (alertsQuery.isLoading) return <PageLoadingSkeleton />;
+
+  const allAlerts = alertsQuery.data?.data ?? [];
+  const meta = alertsQuery.data?.meta;
+
+  // Client-side filter for "dismissed" since the API might not have a dismissed filter
+  const filteredAlerts =
+    activeFilter === "dismissed"
+      ? allAlerts.filter((a) => a.dismissed)
+      : allAlerts;
+
+  // Compute summary stats from visible data
+  const activeCount = allAlerts.filter((a) => !a.acknowledged && !a.dismissed).length;
+  const criticalCount = allAlerts.filter(
+    (a) => a.severity?.toUpperCase() === "CRITICAL" && !a.dismissed
+  ).length;
+  const acknowledgedCount = allAlerts.filter((a) => a.acknowledged && !a.dismissed).length;
+
+  const summaryStats = [
+    { label: "Active Alerts", value: activeCount, icon: AlertTriangle },
+    { label: "Critical", value: criticalCount, icon: ShieldAlert },
+    { label: "Acknowledged", value: acknowledgedCount, icon: CheckCircle2 },
+    { label: "Total on Page", value: allAlerts.length, icon: Clock },
+  ];
+
+  function handleAcknowledge(id: string) {
+    updateAlertMutation.mutate({ id, acknowledged: true });
   }
 
-  function handleDismiss(id: number) {
-    setAlertStates((prev) => ({ ...prev, [id]: "dismissed" }));
+  function handleDismiss(id: string) {
+    updateAlertMutation.mutate({ id, dismissed: true });
   }
 
   return (
@@ -183,7 +163,7 @@ export default function MonitoringPage() {
         {FILTERS.map((filter) => (
           <button
             key={filter.id}
-            onClick={() => setActiveFilter(filter.id)}
+            onClick={() => handleFilterChange(filter.id)}
             className={cn(
               "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
               activeFilter === filter.id
@@ -199,25 +179,28 @@ export default function MonitoringPage() {
       {/* Alert Feed */}
       <div className="space-y-3">
         {filteredAlerts.map((alert) => {
-          const status = alertStates[alert.id];
+          const isAcknowledged = alert.acknowledged;
+          const isDismissed = alert.dismissed;
+
           return (
             <Card
               key={alert.id}
-              className={cn(status === "dismissed" && "opacity-50")}
+              className={cn(isDismissed && "opacity-50")}
             >
               <CardContent className="p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <StatusBadge variant={alert.severity}>
-                      {alert.severity.charAt(0).toUpperCase() + alert.severity.slice(1)}
+                    <StatusBadge variant={severityVariant(alert.severity)}>
+                      {formatSeverity(alert.severity)}
                     </StatusBadge>
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-foreground">
                         {alert.title}
                       </p>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        <span>{alert.vendor}</span>
-                        <span>Detected {alert.detected}</span>
+                        <span>{alert.vendorId}</span>
+                        <span>{formatTimeAgo(alert.createdAt)}</span>
+                        {alert.type && <span>{alert.type}</span>}
                       </div>
                       <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
                         {alert.description}
@@ -226,27 +209,29 @@ export default function MonitoringPage() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    {status !== "acknowledged" && status !== "dismissed" && (
+                    {!isAcknowledged && !isDismissed && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleAcknowledge(alert.id)}
+                        disabled={updateAlertMutation.isPending}
                       >
                         <Eye className="h-3.5 w-3.5" />
                         Acknowledge
                       </Button>
                     )}
-                    {status !== "dismissed" && (
+                    {!isDismissed && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => handleDismiss(alert.id)}
+                        disabled={updateAlertMutation.isPending}
                       >
                         <XCircle className="h-3.5 w-3.5" />
                         Dismiss
                       </Button>
                     )}
-                    {status === "acknowledged" && (
+                    {isAcknowledged && !isDismissed && (
                       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-500">
                         <CheckCircle2 className="h-3.5 w-3.5" />
                         Acknowledged
@@ -269,6 +254,35 @@ export default function MonitoringPage() {
           </Card>
         )}
       </div>
+
+      {/* Pagination */}
+      {meta && meta.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Page {meta.page} of {meta.totalPages} ({meta.total} total)
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={page >= meta.totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

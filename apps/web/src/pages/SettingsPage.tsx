@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import {
   Settings,
@@ -8,13 +8,23 @@ import {
   Link2,
   Save,
   RotateCcw,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
+import { PageLoadingSkeleton } from "@/components/common/LoadingSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectNative } from "@/components/ui/select-native";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import {
+  useSettings,
+  useUpdateSettings,
+  useScoringMatrix,
+  useUpdateScoringMatrix,
+  useNotificationPrefs,
+  useUpdateNotificationPrefs,
+} from "@/hooks/use-settings";
 
 // ---------------------------------------------------------------------------
 // Tab types
@@ -34,9 +44,49 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Settings }[] = [
 // ---------------------------------------------------------------------------
 
 function GeneralTab() {
-  const [orgName, setOrgName] = useState("Acme MSP");
+  const settingsQuery = useSettings();
+  const updateSettings = useUpdateSettings();
+
+  const [orgName, setOrgName] = useState("");
   const [reviewFrequency, setReviewFrequency] = useState("12");
   const [timezone, setTimezone] = useState("America/New_York");
+  const [auditRetention, setAuditRetention] = useState("365");
+
+  // Initialize from API data
+  useEffect(() => {
+    if (settingsQuery.data) {
+      const d = settingsQuery.data;
+      if (d.orgName) setOrgName(d.orgName as string);
+      if (d.reviewFrequency) setReviewFrequency(String(d.reviewFrequency));
+      if (d.timezone) setTimezone(d.timezone as string);
+      if (d.auditRetention) setAuditRetention(String(d.auditRetention));
+    }
+  }, [settingsQuery.data]);
+
+  if (settingsQuery.isLoading) return <PageLoadingSkeleton />;
+
+  function handleSave() {
+    updateSettings.mutate(
+      {
+        orgName,
+        reviewFrequency: Number(reviewFrequency),
+        timezone,
+        auditRetention: Number(auditRetention),
+      },
+      {
+        onSuccess: () => {
+          toast.success("Settings saved", {
+            description: "Your organization settings have been updated.",
+          });
+        },
+        onError: (error) => {
+          toast.error("Failed to save settings", {
+            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          });
+        },
+      }
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -99,7 +149,11 @@ function GeneralTab() {
             label="Audit Log Retention"
             hint="Duration to keep audit log entries."
           >
-            <SelectNative defaultValue="365" className="max-w-md">
+            <SelectNative
+              value={auditRetention}
+              onChange={(e) => setAuditRetention(e.target.value)}
+              className="max-w-md"
+            >
               <option value="90">90 days</option>
               <option value="180">180 days</option>
               <option value="365">1 year</option>
@@ -111,9 +165,14 @@ function GeneralTab() {
 
       <div className="flex gap-3 pt-2">
         <Button
-          onClick={() => toast.info("Settings not saved", { description: "Settings persistence will be available with API integration." })}
+          onClick={handleSave}
+          disabled={updateSettings.isPending}
         >
-          <Save className="h-4 w-4" />
+          {updateSettings.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
           Save Changes
         </Button>
       </div>
@@ -126,6 +185,9 @@ function GeneralTab() {
 // ---------------------------------------------------------------------------
 
 function NotificationsTab() {
+  const prefsQuery = useNotificationPrefs();
+  const updatePrefs = useUpdateNotificationPrefs();
+
   const [prefs, setPrefs] = useState({
     vendorOnboarded: true,
     riskScoreChange: true,
@@ -137,8 +199,42 @@ function NotificationsTab() {
     weeklyDigest: true,
   });
 
+  // Initialize from API data
+  useEffect(() => {
+    if (prefsQuery.data) {
+      const d = prefsQuery.data;
+      setPrefs((prev) => ({
+        vendorOnboarded: typeof d.vendorOnboarded === "boolean" ? d.vendorOnboarded : prev.vendorOnboarded,
+        riskScoreChange: typeof d.riskScoreChange === "boolean" ? d.riskScoreChange : prev.riskScoreChange,
+        remediationDue: typeof d.remediationDue === "boolean" ? d.remediationDue : prev.remediationDue,
+        remediationOverdue: typeof d.remediationOverdue === "boolean" ? d.remediationOverdue : prev.remediationOverdue,
+        reviewCycleReminder: typeof d.reviewCycleReminder === "boolean" ? d.reviewCycleReminder : prev.reviewCycleReminder,
+        monitoringAlert: typeof d.monitoringAlert === "boolean" ? d.monitoringAlert : prev.monitoringAlert,
+        artifactExpiring: typeof d.artifactExpiring === "boolean" ? d.artifactExpiring : prev.artifactExpiring,
+        weeklyDigest: typeof d.weeklyDigest === "boolean" ? d.weeklyDigest : prev.weeklyDigest,
+      }));
+    }
+  }, [prefsQuery.data]);
+
+  if (prefsQuery.isLoading) return <PageLoadingSkeleton />;
+
   function toggle(key: keyof typeof prefs) {
     setPrefs((p) => ({ ...p, [key]: !p[key] }));
+  }
+
+  function handleSave() {
+    updatePrefs.mutate(prefs, {
+      onSuccess: () => {
+        toast.success("Notification preferences saved", {
+          description: "Your notification settings have been updated.",
+        });
+      },
+      onError: (error) => {
+        toast.error("Failed to save preferences", {
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        });
+      },
+    });
   }
 
   const items: { key: keyof typeof prefs; label: string; desc: string }[] = [
@@ -228,9 +324,14 @@ function NotificationsTab() {
 
       <div className="flex gap-3 pt-2">
         <Button
-          onClick={() => toast.info("Preferences not saved", { description: "Notification preference persistence will be available with API integration." })}
+          onClick={handleSave}
+          disabled={updatePrefs.isPending}
         >
-          <Save className="h-4 w-4" />
+          {updatePrefs.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
           Save Preferences
         </Button>
       </div>
@@ -243,25 +344,88 @@ function NotificationsTab() {
 // ---------------------------------------------------------------------------
 
 function ScoringMatrixTab() {
-  const thresholds = [
+  const matrixQuery = useScoringMatrix();
+  const updateMatrix = useUpdateScoringMatrix();
+
+  const [thresholds, setThresholds] = useState([
     { level: "Critical", min: 85, color: "text-red-500" },
     { level: "High", min: 65, color: "text-orange-500" },
     { level: "Medium", min: 40, color: "text-yellow-500" },
     { level: "Low", min: 20, color: "text-blue-500" },
     { level: "Minimal", min: 0, color: "text-cyan-500" },
-  ];
+  ]);
 
-  const weights = [
+  const [weights, setWeights] = useState([
     { label: "Impact Weight", value: "0.60" },
     { label: "Likelihood Weight", value: "0.40" },
-  ];
+  ]);
 
-  const critWeights = [
+  const [critWeights, setCritWeights] = useState([
     { label: "Critical", value: "1.00" },
     { label: "High", value: "0.75" },
     { label: "Medium", value: "0.50" },
     { label: "Low", value: "0.25" },
-  ];
+  ]);
+
+  // Initialize from API data
+  useEffect(() => {
+    if (matrixQuery.data) {
+      const d = matrixQuery.data;
+      if (Array.isArray(d.thresholds)) {
+        setThresholds(d.thresholds as typeof thresholds);
+      }
+      if (Array.isArray(d.weights)) {
+        setWeights(d.weights as typeof weights);
+      }
+      if (Array.isArray(d.criticalityWeights)) {
+        setCritWeights(d.criticalityWeights as typeof critWeights);
+      }
+    }
+  }, [matrixQuery.data]);
+
+  if (matrixQuery.isLoading) return <PageLoadingSkeleton />;
+
+  function handleSave() {
+    updateMatrix.mutate(
+      {
+        config: {
+          thresholds,
+          weights,
+          criticalityWeights: critWeights,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success("Scoring matrix saved", {
+            description: "Your scoring configuration has been updated.",
+          });
+        },
+        onError: (error) => {
+          toast.error("Failed to save scoring matrix", {
+            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          });
+        },
+      }
+    );
+  }
+
+  function handleThresholdChange(index: number, value: number) {
+    setThresholds((prev) =>
+      prev.map((t, i) => (i === index ? { ...t, min: value } : t))
+    );
+  }
+
+  function handleWeightChange(index: number, value: string) {
+    setWeights((prev) =>
+      prev.map((w, i) => (i === index ? { ...w, value } : w))
+    );
+  }
+
+  function handleCritWeightChange(index: number, value: string) {
+    setCritWeights((prev) =>
+      prev.map((c, i) => (i === index ? { ...c, value } : c))
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -271,7 +435,7 @@ function ScoringMatrixTab() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 max-w-md">
-            {thresholds.map((t) => (
+            {thresholds.map((t, i) => (
               <div key={t.level} className="flex items-center gap-3">
                 <span className={cn("text-sm font-medium w-20", t.color)}>
                   {t.level}
@@ -281,7 +445,8 @@ function ScoringMatrixTab() {
                 </span>
                 <Input
                   type="number"
-                  defaultValue={t.min}
+                  value={t.min}
+                  onChange={(e) => handleThresholdChange(i, Number(e.target.value))}
                   min={0}
                   max={100}
                   className="w-20 text-center"
@@ -302,12 +467,13 @@ function ScoringMatrixTab() {
             1.0.
           </p>
           <div className="grid gap-3 max-w-md">
-            {weights.map((w) => (
+            {weights.map((w, i) => (
               <div key={w.label} className="flex items-center gap-3">
                 <span className="text-sm text-foreground w-40">{w.label}</span>
                 <Input
                   type="text"
-                  defaultValue={w.value}
+                  value={w.value}
+                  onChange={(e) => handleWeightChange(i, e.target.value)}
                   className="w-20 text-center"
                 />
               </div>
@@ -322,12 +488,13 @@ function ScoringMatrixTab() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 max-w-md">
-            {critWeights.map((c) => (
+            {critWeights.map((c, i) => (
               <div key={c.label} className="flex items-center gap-3">
                 <span className="text-sm text-foreground w-40">{c.label}</span>
                 <Input
                   type="text"
-                  defaultValue={c.value}
+                  value={c.value}
+                  onChange={(e) => handleCritWeightChange(i, e.target.value)}
                   className="w-20 text-center"
                 />
               </div>
@@ -338,14 +505,40 @@ function ScoringMatrixTab() {
 
       <div className="flex gap-3 pt-2">
         <Button
-          onClick={() => toast.info("Scoring matrix not saved", { description: "Scoring matrix persistence will be available with API integration." })}
+          onClick={handleSave}
+          disabled={updateMatrix.isPending}
         >
-          <Save className="h-4 w-4" />
+          {updateMatrix.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
           Save Matrix
         </Button>
         <Button
           variant="secondary"
-          onClick={() => toast.info("Reset not available", { description: "Scoring matrix reset will be available with API integration." })}
+          onClick={() => {
+            setThresholds([
+              { level: "Critical", min: 85, color: "text-red-500" },
+              { level: "High", min: 65, color: "text-orange-500" },
+              { level: "Medium", min: 40, color: "text-yellow-500" },
+              { level: "Low", min: 20, color: "text-blue-500" },
+              { level: "Minimal", min: 0, color: "text-cyan-500" },
+            ]);
+            setWeights([
+              { label: "Impact Weight", value: "0.60" },
+              { label: "Likelihood Weight", value: "0.40" },
+            ]);
+            setCritWeights([
+              { label: "Critical", value: "1.00" },
+              { label: "High", value: "0.75" },
+              { label: "Medium", value: "0.50" },
+              { label: "Low", value: "0.25" },
+            ]);
+            toast.info("Defaults restored", {
+              description: "Click Save Matrix to persist the default values.",
+            });
+          }}
         >
           <RotateCcw className="h-4 w-4" />
           Reset Defaults
