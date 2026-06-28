@@ -19,8 +19,6 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY . .
 
 # Generate Prisma client
@@ -45,13 +43,11 @@ COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/shared/package.json ./packages/shared/
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/package.json ./apps/api/
-COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 
-# Copy seed script source + tsx for running it
+# Copy shared source for seed script (tsx needs source imports)
 COPY --from=builder /app/packages/shared/src ./packages/shared/src
-COPY --from=builder /app/apps/api/prisma/seed.ts ./apps/api/prisma/seed.ts
-COPY --from=deps /app/node_modules/.bin/tsx ./node_modules/.bin/tsx
+COPY --from=builder /app/tsconfig.base.json ./
 
 COPY --from=builder /app/package.json ./
 
