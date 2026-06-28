@@ -1,8 +1,7 @@
 import { Outlet } from "react-router";
 import { useAuth } from "@/auth/useAuth";
 
-// Separate component that uses MSAL hooks — only rendered when MsalProvider exists
-function MsalProtectedRoute() {
+export function ProtectedRoute() {
   const { isAuthenticated } = useAuth();
 
   if (!isAuthenticated) {
@@ -19,15 +18,4 @@ function MsalProtectedRoute() {
   }
 
   return <Outlet />;
-}
-
-export function ProtectedRoute() {
-  const msalConfigured = !!import.meta.env.VITE_ENTRA_CLIENT_ID;
-
-  // Dev mode: no MsalProvider in tree, skip auth entirely
-  if (!msalConfigured) {
-    return <Outlet />;
-  }
-
-  return <MsalProtectedRoute />;
 }

@@ -6,8 +6,11 @@ const apiClientId = import.meta.env.VITE_API_CLIENT_ID ?? "";
 
 export const msalConfig: Configuration = {
   auth: {
-    clientId,
-    authority: `https://login.microsoftonline.com/${tenantId}`,
+    // Use a placeholder GUID in dev mode so PublicClientApplication can be
+    // constructed and initialized without throwing (OIDC discovery only
+    // happens at login time, not at initialization).
+    clientId: clientId || "00000000-0000-0000-0000-000000000000",
+    authority: `https://login.microsoftonline.com/${tenantId || "common"}`,
     redirectUri: window.location.origin,
     postLogoutRedirectUri: window.location.origin,
   },
@@ -37,6 +40,8 @@ export const msalConfig: Configuration = {
     },
   },
 };
+
+export const msalConfigured = !!import.meta.env.VITE_ENTRA_CLIENT_ID;
 
 export const loginRequest = {
   scopes: [

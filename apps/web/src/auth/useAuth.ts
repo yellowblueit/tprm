@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useMsal, useIsAuthenticated } from "@azure/msal-react";
 import { InteractionRequiredAuthError } from "@azure/msal-browser";
-import { loginRequest } from "@/auth/msal-config";
+import { loginRequest, msalConfigured } from "@/auth/msal-config";
 
 export interface AuthUser {
   name: string;
@@ -11,24 +11,34 @@ export interface AuthUser {
   tenantId: string;
 }
 
+const DEV_USER: AuthUser = {
+  name: "Dev User",
+  email: "dev@tprm.local",
+  username: "dev@tprm.local",
+  localAccountId: "dev",
+  tenantId: "dev",
+};
+
 export function useAuth() {
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
 
   const account = accounts[0] ?? null;
 
-  const user: AuthUser | null = account
-    ? {
-        name: account.name ?? "Unknown User",
-        email:
-          account.idTokenClaims?.email as string ??
-          account.username ??
-          "",
-        username: account.username ?? "",
-        localAccountId: account.localAccountId,
-        tenantId: account.tenantId ?? "",
-      }
-    : null;
+  const user: AuthUser | null = msalConfigured
+    ? account
+      ? {
+          name: account.name ?? "Unknown User",
+          email:
+            (account.idTokenClaims?.email as string) ??
+            account.username ??
+            "",
+          username: account.username ?? "",
+          localAccountId: account.localAccountId,
+          tenantId: account.tenantId ?? "",
+        }
+      : null
+    : DEV_USER;
 
   const login = useCallback(async () => {
     try {
@@ -40,6 +50,7 @@ export function useAuth() {
   }, [instance]);
 
   const logout = useCallback(async () => {
+    if (!msalConfigured) return; // no-op in dev mode
     try {
       await instance.logoutRedirect({
         postLogoutRedirectUri: window.location.origin,
@@ -51,6 +62,10 @@ export function useAuth() {
   }, [instance]);
 
   const getAccessToken = useCallback(async (): Promise<string> => {
+    if (!msalConfigured) {
+      return "dev:dev-user-id:dev@tprm.local:Dev User:MSP_ADMIN";
+    }
+
     if (!account) {
       throw new Error("No active account. Please sign in.");
     }
@@ -63,14 +78,11 @@ export function useAuth() {
       return response.accessToken;
     } catch (error) {
       if (error instanceof InteractionRequiredAuthError) {
-        // Silent token acquisition failed, fall back to redirect
         try {
           await instance.acquireTokenRedirect({
             ...loginRequest,
             account,
           });
-          // After redirect, this code won't execute.
-          // The token will be available after the redirect completes.
           return "";
         } catch (redirectError) {
           console.error("Token acquisition via redirect failed:", redirectError);
@@ -84,7 +96,7 @@ export function useAuth() {
 
   return {
     user,
-    isAuthenticated,
+    isAuthenticated: msalConfigured ? isAuthenticated : true,
     login,
     logout,
     getAccessToken,

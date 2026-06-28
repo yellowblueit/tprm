@@ -11,7 +11,7 @@ import {
   type EventMessage,
   type AuthenticationResult,
 } from "@azure/msal-browser";
-import { msalConfig, loginRequest } from "@/auth/msal-config";
+import { msalConfig, msalConfigured, loginRequest } from "@/auth/msal-config";
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -53,8 +53,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isReady, setIsReady] = useState(false);
 
   const msalInstance = useMemo(() => {
-    const instance = new PublicClientApplication(msalConfig);
-    return instance;
+    return new PublicClientApplication(msalConfig);
   }, []);
 
   useEffect(() => {
@@ -62,13 +61,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       try {
         await msalInstance.initialize();
 
-        // Handle redirect response
         const response = await msalInstance.handleRedirectPromise();
         if (response) {
           msalInstance.setActiveAccount(response.account);
         }
 
-        // Set active account if not already set
         if (
           !msalInstance.getActiveAccount() &&
           msalInstance.getAllAccounts().length > 0
@@ -76,7 +73,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
           msalInstance.setActiveAccount(msalInstance.getAllAccounts()[0]);
         }
 
-        // Listen for login success events
         msalInstance.addEventCallback((event: EventMessage) => {
           if (
             event.eventType === EventType.LOGIN_SUCCESS &&
@@ -86,17 +82,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
             msalInstance.setActiveAccount(payload.account);
           }
         });
-
-        setIsReady(true);
       } catch (error) {
-        console.error("MSAL initialization failed:", error);
-        // In dev mode without MSAL config, still allow the app to render
-        if (!msalConfig.auth.clientId) {
-          console.warn(
-            "MSAL not configured. Running in unauthenticated dev mode."
-          );
-          setIsReady(true);
-        }
+        console.warn("MSAL initialization warning:", error);
+      } finally {
+        setIsReady(true);
       }
     };
 
@@ -107,24 +96,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return <AuthLoading />;
   }
 
-  // If MSAL is not configured (no client ID), render children directly for dev mode
-  if (!msalConfig.auth.clientId) {
-    return <>{children}</>;
-  }
-
+  // Always render MsalProvider so useMsal() works in any child component.
+  // In dev mode (no real clientId), skip MsalAuthenticationTemplate so no
+  // redirect to Azure login happens.
   return (
     <MsalProvider instance={msalInstance}>
-      <MsalAuthenticationTemplate
-        interactionType={InteractionType.Redirect}
-        authenticationRequest={loginRequest}
-        loadingComponent={AuthLoading}
-        errorComponent={({ error }) => <AuthError error={error} />}
-      >
-        {children}
-      </MsalAuthenticationTemplate>
-      <UnauthenticatedTemplate>
-        <AuthLoading />
-      </UnauthenticatedTemplate>
+      {msalConfigured ? (
+        <>
+          <MsalAuthenticationTemplate
+            interactionType={InteractionType.Redirect}
+            authenticationRequest={loginRequest}
+            loadingComponent={AuthLoading}
+            errorComponent={({ error }) => <AuthError error={error} />}
+          >
+            {children}
+          </MsalAuthenticationTemplate>
+          <UnauthenticatedTemplate>
+            <AuthLoading />
+          </UnauthenticatedTemplate>
+        </>
+      ) : (
+        children
+      )}
     </MsalProvider>
   );
 }
