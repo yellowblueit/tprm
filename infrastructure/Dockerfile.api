@@ -36,6 +36,7 @@ RUN npm run build --workspace=apps/api
 FROM node:20-alpine AS runner
 WORKDIR /app
 
+# NODE_ENV set via docker-compose (development for dev bypass, production for real auth)
 ENV NODE_ENV=production
 
 # Copy built assets
@@ -46,6 +47,12 @@ COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/package.json ./apps/api/
 COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
+
+# Copy seed script source + tsx for running it
+COPY --from=builder /app/packages/shared/src ./packages/shared/src
+COPY --from=builder /app/apps/api/prisma/seed.ts ./apps/api/prisma/seed.ts
+COPY --from=deps /app/node_modules/.bin/tsx ./node_modules/.bin/tsx
+
 COPY --from=builder /app/package.json ./
 
 # Run Prisma migrations on startup and then start the server
