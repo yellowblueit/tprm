@@ -201,6 +201,7 @@ model Tenant {
   vendors         Vendor[]
   scoringMatrices ScoringMatrix[]
   auditLogs       AuditLog[]
+  integrations    TenantIntegration[]
 
   @@index([parentTenantId])
   @@index([slug])
@@ -716,4 +717,26 @@ model NotificationPreference {
   preferences Json
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ============================================================================
+// TENANT INTEGRATIONS (encrypted credentials)
+// ============================================================================
+
+model TenantIntegration {
+  id             String    @id @default(uuid()) @db.Uuid
+  tenantId       String    @db.Uuid
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  type           String    // "S3", "ANTHROPIC", "SENDGRID"
+  displayName    String
+  config         Json?     // Non-sensitive config (endpoint, region, bucket names, etc.)
+  credentials    Json?     // Encrypted credential fields: { accessKey: "iv:tag:cipher", ... }
+  isActive       Boolean   @default(false)
+  lastTestedAt   DateTime?
+  lastTestStatus String?   // "success" | "failure"
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([tenantId, type])
+  @@index([tenantId])
 }

@@ -13,6 +13,9 @@ const envSchema = z.object({
   // Redis
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
+  // Encryption (for integration credentials at rest)
+  ENCRYPTION_KEY: z.string().min(32),
+
   // S3-compatible storage (MinIO dev / Wasabi prod)
   S3_ENDPOINT: z.string().default('http://localhost:9000'),
   S3_ACCESS_KEY: z.string().default('minioadmin'),

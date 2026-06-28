@@ -9,6 +9,10 @@ import {
   Save,
   RotateCcw,
   Loader2,
+  CheckCircle2,
+  XCircle,
+  HardDrive,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -18,6 +22,12 @@ import { Input } from "@/components/ui/input";
 import { SelectNative } from "@/components/ui/select-native";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   useSettings,
   useUpdateSettings,
   useScoringMatrix,
@@ -25,6 +35,13 @@ import {
   useNotificationPrefs,
   useUpdateNotificationPrefs,
 } from "@/hooks/use-settings";
+import {
+  useIntegrations,
+  useUpsertIntegration,
+  useTestIntegration,
+  useDeleteIntegration,
+  type Integration,
+} from "@/hooks/use-integrations";
 
 // ---------------------------------------------------------------------------
 // Tab types
@@ -552,77 +569,392 @@ function ScoringMatrixTab() {
 // Integrations Tab
 // ---------------------------------------------------------------------------
 
+interface IntegrationDef {
+  type: string;
+  name: string;
+  desc: string;
+  icon: typeof Shield;
+  configurable: boolean;
+  configFields?: { key: string; label: string; type: "text" | "select"; options?: string[] }[];
+  credentialFields?: { key: string; label: string }[];
+}
+
+const INTEGRATION_DEFS: IntegrationDef[] = [
+  {
+    type: "ENTRA",
+    name: "Microsoft Entra ID",
+    desc: "Single sign-on and user provisioning (configured via environment).",
+    icon: Shield,
+    configurable: false,
+  },
+  {
+    type: "S3",
+    name: "S3 Storage (Wasabi / MinIO)",
+    desc: "Artifact and report file storage.",
+    icon: HardDrive,
+    configurable: true,
+    configFields: [
+      { key: "endpoint", label: "Endpoint URL", type: "text" },
+      { key: "region", label: "Region", type: "text" },
+      { key: "bucketArtifacts", label: "Artifacts Bucket", type: "text" },
+      { key: "bucketReports", label: "Reports Bucket", type: "text" },
+      { key: "forcePathStyle", label: "Force Path Style", type: "select", options: ["true", "false"] },
+    ],
+    credentialFields: [
+      { key: "accessKey", label: "Access Key" },
+      { key: "secretKey", label: "Secret Key" },
+    ],
+  },
+  {
+    type: "ANTHROPIC",
+    name: "Claude AI (Anthropic)",
+    desc: "AI-powered vendor enrichment and artifact analysis.",
+    icon: Palette,
+    configurable: true,
+    credentialFields: [{ key: "apiKey", label: "API Key" }],
+  },
+  {
+    type: "SENDGRID",
+    name: "SendGrid",
+    desc: "Transactional email notifications.",
+    icon: Bell,
+    configurable: true,
+    configFields: [
+      { key: "fromEmail", label: "From Email", type: "text" },
+      { key: "fromName", label: "From Name", type: "text" },
+    ],
+    credentialFields: [{ key: "apiKey", label: "API Key" }],
+  },
+];
+
 function IntegrationsTab() {
-  const integrations = [
-    {
-      name: "Microsoft Entra ID",
-      desc: "Single sign-on and user provisioning.",
-      status: "connected" as const,
-      icon: Shield,
-    },
-    {
-      name: "Claude AI (Anthropic)",
-      desc: "AI-powered vendor enrichment and artifact analysis.",
-      status: "not_configured" as const,
-      icon: Palette,
-    },
-    {
-      name: "SendGrid",
-      desc: "Transactional email notifications.",
-      status: "not_configured" as const,
-      icon: Bell,
-    },
-    {
-      name: "MinIO (S3 Storage)",
-      desc: "Artifact and report file storage.",
-      status: "connected" as const,
-      icon: Link2,
-    },
-  ];
+  const integrationsQuery = useIntegrations();
+  const [configuring, setConfiguring] = useState<IntegrationDef | null>(null);
+
+  if (integrationsQuery.isLoading) return <PageLoadingSkeleton />;
+
+  const savedMap = new Map<string, Integration>();
+  for (const i of integrationsQuery.data ?? []) {
+    savedMap.set(i.type, i);
+  }
 
   return (
-    <div className="space-y-4">
-      {integrations.map((integ) => {
-        const Icon = integ.icon;
-        return (
-          <Card key={integ.name} className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                  <Icon className="h-5 w-5 text-muted-foreground" />
+    <>
+      <div className="space-y-4">
+        <p className="text-xs text-muted-foreground">
+          All credentials are encrypted at rest using AES-256-GCM. Secrets are
+          never returned in plaintext after saving.
+        </p>
+        {INTEGRATION_DEFS.map((def) => {
+          const saved = savedMap.get(def.type);
+          const Icon = def.icon;
+          const isConnected = saved?.isActive === true;
+          const isFailed = saved?.lastTestStatus === "failure";
+
+          return (
+            <Card key={def.type} className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                    <Icon className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {def.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{def.desc}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    {integ.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{integ.desc}</p>
+                <div className="flex items-center gap-3">
+                  {isConnected ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-500">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Connected
+                    </span>
+                  ) : isFailed ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-red-500">
+                      <XCircle className="h-3.5 w-3.5" />
+                      Failed
+                    </span>
+                  ) : saved ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-yellow-500">
+                      <span className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
+                      Saved
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                      <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                      Not Configured
+                    </span>
+                  )}
+                  {def.configurable ? (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setConfiguring(def)}
+                    >
+                      Configure
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" size="sm" disabled>
+                      Environment
+                    </Button>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                {integ.status === "connected" ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-500">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                    Connected
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                    <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground" />
-                    Not Configured
-                  </span>
-                )}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => toast.info(`Configure ${integ.name}`, { description: "Integration configuration will be available in a future update." })}
+            </Card>
+          );
+        })}
+      </div>
+
+      {configuring && (
+        <IntegrationDialog
+          def={configuring}
+          existing={savedMap.get(configuring.type) ?? null}
+          onClose={() => setConfiguring(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Integration Configuration Dialog
+// ---------------------------------------------------------------------------
+
+function IntegrationDialog({
+  def,
+  existing,
+  onClose,
+}: {
+  def: IntegrationDef;
+  existing: Integration | null;
+  onClose: () => void;
+}) {
+  const upsert = useUpsertIntegration();
+  const test = useTestIntegration();
+  const remove = useDeleteIntegration();
+
+  // Config fields state
+  const [config, setConfig] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const f of def.configFields ?? []) {
+      const existingVal = (existing?.config as Record<string, unknown>)?.[f.key];
+      initial[f.key] = existingVal != null ? String(existingVal) : "";
+    }
+    return initial;
+  });
+
+  // Credential fields state (shows masked values from API)
+  const [creds, setCreds] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const f of def.credentialFields ?? []) {
+      initial[f.key] = existing?.credentials?.[f.key] ?? "";
+    }
+    return initial;
+  });
+
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+
+  function handleSave() {
+    const payload: {
+      displayName: string;
+      config?: Record<string, unknown>;
+      credentials?: Record<string, string>;
+    } = {
+      displayName: def.name,
+    };
+
+    if (def.configFields?.length) {
+      payload.config = { ...config };
+    }
+    if (def.credentialFields?.length) {
+      payload.credentials = { ...creds };
+    }
+
+    upsert.mutate(
+      { type: def.type, data: payload },
+      {
+        onSuccess: () => {
+          toast.success("Integration saved", {
+            description: `${def.name} configuration has been saved. Credentials are encrypted at rest.`,
+          });
+          setTestResult(null);
+        },
+        onError: (err) => {
+          toast.error("Failed to save integration", {
+            description: err instanceof Error ? err.message : "An unexpected error occurred.",
+          });
+        },
+      }
+    );
+  }
+
+  function handleTest() {
+    setTestResult(null);
+    test.mutate(def.type, {
+      onSuccess: (result) => {
+        setTestResult(result);
+        if (result.success) {
+          toast.success("Connection successful", { description: result.message });
+        } else {
+          toast.error("Connection failed", { description: result.message });
+        }
+      },
+      onError: (err) => {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        setTestResult({ success: false, message: msg });
+        toast.error("Connection test failed", { description: msg });
+      },
+    });
+  }
+
+  function handleDelete() {
+    remove.mutate(def.type, {
+      onSuccess: () => {
+        toast.success("Integration removed", {
+          description: `${def.name} has been disconnected and credentials deleted.`,
+        });
+        onClose();
+      },
+      onError: (err) => {
+        toast.error("Failed to remove integration", {
+          description: err instanceof Error ? err.message : "An unexpected error occurred.",
+        });
+      },
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogTitle>Configure {def.name}</DialogTitle>
+        <DialogDescription>
+          Enter your credentials below. All secrets are encrypted with
+          AES-256-GCM before storage.
+        </DialogDescription>
+
+        <div className="mt-4 space-y-4">
+          {/* Config fields */}
+          {def.configFields?.map((f) => (
+            <Field key={f.key} label={f.label}>
+              {f.type === "select" ? (
+                <SelectNative
+                  value={config[f.key] ?? ""}
+                  onChange={(e) =>
+                    setConfig((p) => ({ ...p, [f.key]: e.target.value }))
+                  }
+                  className="max-w-full"
                 >
-                  Configure
-                </Button>
+                  {f.options?.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </SelectNative>
+              ) : (
+                <Input
+                  type="text"
+                  value={config[f.key] ?? ""}
+                  onChange={(e) =>
+                    setConfig((p) => ({ ...p, [f.key]: e.target.value }))
+                  }
+                  placeholder={f.label}
+                />
+              )}
+            </Field>
+          ))}
+
+          {/* Credential fields */}
+          {def.credentialFields?.map((f) => (
+            <Field
+              key={f.key}
+              label={f.label}
+              hint="Encrypted at rest. Shown masked after saving."
+            >
+              <Input
+                type="password"
+                value={creds[f.key] ?? ""}
+                onChange={(e) =>
+                  setCreds((p) => ({ ...p, [f.key]: e.target.value }))
+                }
+                placeholder={f.label}
+              />
+            </Field>
+          ))}
+
+          {/* Test result */}
+          {testResult && (
+            <div
+              className={cn(
+                "rounded-md border p-3 text-sm",
+                testResult.success
+                  ? "border-green-500/30 bg-green-500/10 text-green-500"
+                  : "border-red-500/30 bg-red-500/10 text-red-500"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                {testResult.success ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )}
+                {testResult.message}
               </div>
             </div>
-          </Card>
-        );
-      })}
-    </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="mt-6 flex items-center justify-between">
+          <div>
+            {existing && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleDelete}
+                disabled={remove.isPending}
+              >
+                {remove.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+                Remove
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={handleTest}
+              disabled={test.isPending || upsert.isPending}
+            >
+              {test.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              Test Connection
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={upsert.isPending}
+            >
+              {upsert.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              Save
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -26,6 +26,7 @@ import { reviewCycleRoutes } from './modules/review-cycles/review-cycle.routes.j
 import { subprocessorRoutes, vendorSubprocessorRoutes } from './modules/subprocessors/subprocessor.routes.js';
 import { reportRoutes } from './modules/reports/report.routes.js';
 import { settingsRoutes } from './modules/settings/settings.routes.js';
+import { integrationRoutes } from './modules/integrations/integration.routes.js';
 import { vendorCatalogRoutes } from './modules/vendor-catalog/vendor-catalog.routes.js';
 import { activityRoutes, vendorActivityRoutes } from './modules/activity/activity.routes.js';
 
@@ -99,6 +100,7 @@ async function buildServer() {
     await api.register(vendorSubprocessorRoutes, { prefix: '/vendors' });
     await api.register(reportRoutes, { prefix: '/reports' });
     await api.register(settingsRoutes, { prefix: '/settings' });
+    await api.register(integrationRoutes, { prefix: '/settings/integrations' });
     await api.register(vendorCatalogRoutes, { prefix: '/admin/catalog' });
     await api.register(activityRoutes, { prefix: '/activity' });
     await api.register(vendorActivityRoutes, { prefix: '/vendors' });
