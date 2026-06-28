@@ -1,13 +1,11 @@
 import { Outlet } from "react-router";
 import { useAuth } from "@/auth/useAuth";
 
-export function ProtectedRoute() {
+// Separate component that uses MSAL hooks — only rendered when MsalProvider exists
+function MsalProtectedRoute() {
   const { isAuthenticated } = useAuth();
 
-  // When MSAL is not configured (dev mode), allow access
-  const msalConfigured = !!import.meta.env.VITE_ENTRA_CLIENT_ID;
-
-  if (msalConfigured && !isAuthenticated) {
+  if (!isAuthenticated) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -21,4 +19,15 @@ export function ProtectedRoute() {
   }
 
   return <Outlet />;
+}
+
+export function ProtectedRoute() {
+  const msalConfigured = !!import.meta.env.VITE_ENTRA_CLIENT_ID;
+
+  // Dev mode: no MsalProvider in tree, skip auth entirely
+  if (!msalConfigured) {
+    return <Outlet />;
+  }
+
+  return <MsalProtectedRoute />;
 }
