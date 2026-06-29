@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  Sparkles,
   Loader2,
   Globe,
   Building2,
@@ -238,8 +237,6 @@ function StepBasicInfo({
   data: BasicInfoData;
   onChange: (data: BasicInfoData) => void;
 }) {
-  const [aiLoading, setAiLoading] = useState(false);
-
   const handleChange = (
     field: keyof BasicInfoData,
     value: string
@@ -247,89 +244,16 @@ function StepBasicInfo({
     onChange({ ...data, [field]: value });
   };
 
-  const handleAiFill = useCallback(() => {
-    setAiLoading(true);
-    // Simulate AI research delay
-    setTimeout(() => {
-      onChange({
-        name: data.name || "Acme Cloud Services",
-        website: "https://acmecloud.io",
-        description:
-          "Acme Cloud Services provides enterprise-grade cloud infrastructure, including compute, storage, and networking solutions. They serve Fortune 500 companies and maintain SOC 2 Type II compliance with data centers across North America and Europe.",
-        industry: "Cloud Infrastructure",
-        headquartersCountry: "United States",
-        employeeCount: "1001-5000",
-        yearFounded: "2015",
-      });
-      setAiLoading(false);
-    }, 2000);
-  }, [data.name, onChange]);
-
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">
-            Basic Information
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Enter the vendor's basic details or let AI auto-fill.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="md"
-          onClick={handleAiFill}
-          disabled={aiLoading}
-        >
-          {aiLoading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              AI researching...
-            </>
-          ) : (
-            <>
-              <Sparkles className="h-4 w-4" />
-              AI Auto-Fill
-            </>
-          )}
-        </Button>
+      <div>
+        <h2 className="text-lg font-semibold text-foreground">
+          Basic Information
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Enter the vendor's basic details.
+        </p>
       </div>
-
-      {/* AI loading overlay */}
-      <AnimatePresence>
-        {aiLoading && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden rounded-md border border-primary/20 bg-primary/5 p-4"
-          >
-            <div className="flex items-center gap-3">
-              <Sparkles className="h-5 w-5 text-primary" />
-              <div>
-                <p className="text-sm font-medium text-primary">
-                  AI is researching this vendor...
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Analyzing public information, certifications, and company data.
-                </p>
-              </div>
-            </div>
-            <motion.div
-              className="mt-3 h-1.5 overflow-hidden rounded-full bg-primary/10"
-            >
-              <motion.div
-                className="h-full rounded-full bg-primary"
-                initial={{ width: "0%" }}
-                animate={{ width: "100%" }}
-                transition={{ duration: 2, ease: "easeInOut" }}
-              />
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         {/* Name */}
