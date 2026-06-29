@@ -19,25 +19,41 @@ export class SettingsService {
   }
 
   /**
-   * Get tenant record with its settings JSON field.
+   * Get tenant settings as a flat object the frontend can consume directly.
+   * Merges tenant.name into orgName so the UI field is pre-populated.
    */
-  async getSettings(tenantId: string): Promise<Tenant> {
+  async getSettings(tenantId: string) {
     const tenant = await this.prisma.tenant.findUniqueOrThrow({
       where: { id: tenantId },
     });
-    return tenant;
+
+    const stored = (tenant.settings ?? {}) as Record<string, unknown>;
+
+    return {
+      orgName: (stored.orgName as string | undefined) ?? tenant.name,
+      reviewFrequency: (stored.reviewFrequency as number | undefined) ?? 90,
+      timezone: (stored.timezone as string | undefined) ?? 'UTC',
+      auditRetention: (stored.auditRetention as number | undefined) ?? 365,
+    };
   }
 
   /**
-   * Update the tenant settings JSON field.
+   * Update the tenant settings JSON field and keep tenant.name in sync with orgName.
    */
   async updateSettings(
     tenantId: string,
     settings: Prisma.InputJsonValue
   ): Promise<Tenant> {
+    const incoming = settings as Record<string, unknown>;
+
+    const updateData: Prisma.TenantUpdateInput = { settings };
+    if (typeof incoming.orgName === 'string' && incoming.orgName.trim()) {
+      updateData.name = incoming.orgName.trim();
+    }
+
     return this.prisma.tenant.update({
       where: { id: tenantId },
-      data: { settings },
+      data: updateData,
     });
   }
 
