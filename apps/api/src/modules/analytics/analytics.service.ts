@@ -116,6 +116,7 @@ export class AnalyticsService {
 
   /**
    * Get vendor count by inherent risk level from latest risk scores.
+   * Returns array of {level, count, percentage} matching frontend RiskDistribution type.
    */
   async getRiskDistribution(tenantId: string) {
     const rows = await this.prisma.riskScore.groupBy({
@@ -127,16 +128,18 @@ export class AnalyticsService {
       _count: { id: true },
     });
 
-    const distribution: Record<string, number> = {};
-    for (const row of rows) {
-      distribution[row.inherentRiskLevel] = row._count.id;
-    }
+    const total = rows.reduce((sum, r) => sum + r._count.id, 0);
 
-    return distribution;
+    return rows.map((row) => ({
+      level: row.inherentRiskLevel,
+      count: row._count.id,
+      percentage: total > 0 ? Math.round((row._count.id / total) * 100) : 0,
+    }));
   }
 
   /**
-   * Get monthly average inherent/residual risk scores over the past N months.
+   * Get monthly average risk scores over the past N months.
+   * Returns array of {month, averageScore, highRiskCount} matching frontend RiskTrendPoint type.
    */
   async getRiskTrend(tenantId: string, months = 6) {
     const startDate = new Date();
@@ -150,15 +153,14 @@ export class AnalyticsService {
       select: {
         calculatedAt: true,
         inherentRiskScore: true,
-        residualRiskScore: true,
+        inherentRiskLevel: true,
       },
       orderBy: { calculatedAt: 'asc' },
     });
 
-    // Group by year-month
     const monthlyMap = new Map<
       string,
-      { inherentSum: number; residualSum: number; count: number }
+      { scoreSum: number; count: number; highRiskCount: number }
     >();
 
     for (const score of scores) {
@@ -166,29 +168,27 @@ export class AnalyticsService {
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 
       if (!monthlyMap.has(key)) {
-        monthlyMap.set(key, { inherentSum: 0, residualSum: 0, count: 0 });
+        monthlyMap.set(key, { scoreSum: 0, count: 0, highRiskCount: 0 });
       }
 
       const entry = monthlyMap.get(key)!;
-      entry.inherentSum += score.inherentRiskScore;
-      entry.residualSum += score.residualRiskScore ?? 0;
+      entry.scoreSum += score.inherentRiskScore;
       entry.count += 1;
+      if (score.inherentRiskLevel === 'HIGH' || score.inherentRiskLevel === 'CRITICAL') {
+        entry.highRiskCount += 1;
+      }
     }
 
-    const trend: { month: string; inherent: number; residual: number }[] = [];
-    for (const [month, data] of monthlyMap) {
-      trend.push({
-        month,
-        inherent: Math.round((data.inherentSum / data.count) * 100) / 100,
-        residual: Math.round((data.residualSum / data.count) * 100) / 100,
-      });
-    }
-
-    return trend;
+    return Array.from(monthlyMap.entries()).map(([month, data]) => ({
+      month,
+      averageScore: Math.round((data.scoreSum / data.count) * 100) / 100,
+      highRiskCount: data.highRiskCount,
+    }));
   }
 
   /**
    * Get vendor count grouped by pipeline stage.
+   * Returns array of {stage, count} matching frontend VendorPipelineStage type.
    */
   async getVendorPipeline(tenantId: string) {
     const rows = await this.prisma.vendor.groupBy({
@@ -197,16 +197,14 @@ export class AnalyticsService {
       _count: { id: true },
     });
 
-    const pipeline: Record<string, number> = {};
-    for (const row of rows) {
-      pipeline[row.stage] = row._count.id;
-    }
-
-    return pipeline;
+    return rows.map((row) => ({
+      stage: row.stage,
+      count: row._count.id,
+    }));
   }
 
   /**
-   * Get remediation count grouped by status.
+   * Get remediation stats as typed totals matching frontend RemediationStats type.
    */
   async getRemediationStats(tenantId: string) {
     const rows = await this.prisma.remediation.groupBy({
@@ -215,11 +213,22 @@ export class AnalyticsService {
       _count: { id: true },
     });
 
-    const stats: Record<string, number> = {};
+    const byStatus: Record<string, number> = {};
     for (const row of rows) {
-      stats[row.status] = row._count.id;
+      byStatus[row.status] = row._count.id;
     }
 
-    return stats;
+    const open =
+      (byStatus['OPEN'] ?? 0) +
+      (byStatus['AWAITING_VENDOR'] ?? 0) +
+      (byStatus['VENDOR_RESPONDED'] ?? 0) +
+      (byStatus['UNDER_REVIEW'] ?? 0);
+
+    const inProgress = byStatus['IN_PROGRESS'] ?? 0;
+    const completed = (byStatus['ACCEPTED'] ?? 0) + (byStatus['CLOSED'] ?? 0);
+    const overdue = byStatus['OVERDUE'] ?? 0;
+    const total = Object.values(byStatus).reduce((s, v) => s + v, 0);
+
+    return { total, open, inProgress, completed, overdue, averageResolutionDays: 0 };
   }
 }
